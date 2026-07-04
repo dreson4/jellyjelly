@@ -30,6 +30,7 @@ struct SeerDetailView: View {
     @State private var showRequestSheet = false
     @State private var isRequesting = false
     @State private var requestDone = false
+    @State private var canceling = false
     @State private var requestError: String?
     /// Seasons we've requested this session, so their badges flip immediately.
     @State private var pendingSeasons: Set<Int> = []
@@ -63,7 +64,7 @@ struct SeerDetailView: View {
             }
             .padding(.bottom, 80)
         }
-        .ignoresSafeArea(edges: .top)
+        .ignoresSafeArea()
         .detailBackButton()
         .defaultFocus($requestFocused, true)
         .task { await load() }
@@ -74,6 +75,7 @@ struct SeerDetailView: View {
                 do {
                     try await seer.request(media, seasons: seasons)
                     pendingSeasons.formUnion(seasons)
+                    await refreshDetails()
                     return nil
                 } catch {
                     return "Request failed. \(error.localizedDescription)"
@@ -230,6 +232,11 @@ struct SeerDetailView: View {
         .background(Capsule().fill(Color.white.opacity(0.07)))
     }
 
+    /// Requests attached to this title that the user can still cancel.
+    private var cancelableRequestIds: [Int] {
+        details?.mediaInfo?.requests?.map(\.id) ?? []
+    }
+
     @ViewBuilder
     private var actions: some View {
         HStack(spacing: 20) {
@@ -249,6 +256,7 @@ struct SeerDetailView: View {
                 if status != .unknown {
                     StatusBadge(status: status)
                 }
+                cancelButton
             } else {
                 switch status {
                 case .unknown:
@@ -265,15 +273,27 @@ struct SeerDetailView: View {
                     .focused($requestFocused)
                     .disabled(isRequesting)
                 default:
-                    if requestDone {
-                        Badge(text: "✓ Requested — it's on its way",
-                              tint: Color(hex: 0x2AA860).opacity(0.25),
-                              textColor: Color(hex: 0x5BE49B))
-                    } else {
-                        StatusBadge(status: status)
-                    }
+                    StatusBadge(status: status)
+                    cancelButton
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var cancelButton: some View {
+        if !cancelableRequestIds.isEmpty {
+            Button {
+                Task { await cancelRequests() }
+            } label: {
+                if canceling {
+                    ProgressView().tint(.white)
+                } else {
+                    Label("Cancel Request", systemImage: "xmark.circle")
+                }
+            }
+            .buttonStyle(PillButtonStyle())
+            .disabled(canceling)
         }
     }
 
@@ -474,10 +494,33 @@ struct SeerDetailView: View {
         do {
             try await seer.request(media)
             requestDone = true
+            await refreshDetails()   // pick up the new request id so Cancel appears
         } catch {
             requestError = "Request failed. \(error.localizedDescription)"
         }
         isRequesting = false
+    }
+
+    /// Re-fetch details so status and cancelable request ids reflect the server.
+    private func refreshDetails() async {
+        guard let seer = appState.jellyseerr else { return }
+        details = try? await seer.details(for: media)
+    }
+
+    private func cancelRequests() async {
+        guard let seer = appState.jellyseerr else { return }
+        let ids = cancelableRequestIds
+        guard !ids.isEmpty else { return }
+        canceling = true
+        requestError = nil
+        for id in ids {
+            do { try await seer.deleteRequest(id: id) }
+            catch { requestError = "Couldn't cancel. \(error.localizedDescription)" }
+        }
+        requestDone = false
+        pendingSeasons.removeAll()
+        await refreshDetails()
+        canceling = false
     }
 }
 

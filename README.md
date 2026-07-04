@@ -22,13 +22,18 @@ no third-party dependencies.
   server-side HLS transcode otherwise; progress reported back to Jellyfin
   (resume positions, watched state, Next Up all stay in sync)
 - **Search** — Jellyfin library search
-- **Discover** (optional, needs Jellyseerr) — Trending / Popular / Coming Soon shelves,
-  TMDB search, and full detail pages: backdrop hero, a dedicated ratings line
-  (Rotten Tomatoes critics & audience, IMDb, TMDB), a season/episode browser
-  for series (a season loads the moment you focus its chip — no click), a
-  circular cast row that opens person pages (bio + "Known For"), recommendations
-  and similar titles. Movies request in one press; series open a Jellyseerr-style
-  **Request Series** sheet with per-season toggles, episode counts and availability
+- **Discover** (optional, needs Jellyseerr) — a Jellyseerr-style home: Trending,
+  Popular Movies/Series, Coming Soon and Upcoming Series shelves, colored
+  **Movie/Series Genre** tiles, and **Studios** and **Networks** rows, each
+  opening a paged filtered grid. TMDB search, plus a **Requests** page that lists
+  every request with its status and a Delete button. Full detail pages: full-bleed
+  backdrop hero, a dedicated ratings line (Rotten Tomatoes critics & audience,
+  IMDb, TMDB), a season/episode browser for series (a season loads the moment you
+  focus its chip — no click), a circular cast row that opens person pages (bio +
+  "Known For"), recommendations and similar titles. Movies request in one press;
+  series open a Jellyseerr-style **Request Series** sheet with per-season toggles,
+  episode counts and availability. A requested title can be **cancelled** from its
+  detail page or deleted from the Requests page
 - **Settings** — server info, Jellyseerr connect/disconnect, sign out
 
 ## Running

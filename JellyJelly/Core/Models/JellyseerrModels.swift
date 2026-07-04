@@ -41,13 +41,22 @@ struct SeerMediaInfoSeason: Codable, Hashable {
     let status: SeerMediaStatus?
 }
 
+/// A request attached to a title, so a detail page can cancel it.
+struct SeerRequestRef: Codable, Hashable {
+    let id: Int
+    let status: Int?   // 1 = pending approval, 2 = approved
+}
+
 struct SeerMediaInfo: Codable, Hashable {
     let status: SeerMediaStatus?
     var seasons: [SeerMediaInfoSeason]?
+    var requests: [SeerRequestRef]?
 
-    init(status: SeerMediaStatus?, seasons: [SeerMediaInfoSeason]? = nil) {
+    init(status: SeerMediaStatus?, seasons: [SeerMediaInfoSeason]? = nil,
+         requests: [SeerRequestRef]? = nil) {
         self.status = status
         self.seasons = seasons
+        self.requests = requests
     }
 }
 
@@ -347,5 +356,65 @@ struct SeerPersonCredits: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         cast = try container.decodeIfPresent([FailableDecodable<SeerResult>].self, forKey: .cast)?
             .compactMap(\.value) ?? []
+    }
+}
+
+// MARK: - Requests (the /request list)
+
+struct SeerRequestMedia: Decodable, Hashable {
+    let tmdbId: Int?
+    let mediaType: String?
+    var status: SeerMediaStatus?
+}
+
+struct SeerRequest: Decodable, Identifiable, Hashable {
+    let id: Int
+    let status: Int?          // 1 = pending approval, 2 = approved, 3 = declined
+    let type: String?         // "movie" | "tv"
+    let createdAt: String?
+    let media: SeerRequestMedia
+    let seasons: [SeerMediaInfoSeason]?
+
+    var mediaStatus: SeerMediaStatus { media.status ?? .unknown }
+    var isMovie: Bool { (type ?? media.mediaType) == "movie" }
+    var mediaType: String { type ?? media.mediaType ?? "movie" }
+
+    /// The request itself is still awaiting approval.
+    var isPendingApproval: Bool { status == 1 }
+
+    /// "3 days ago" from the ISO created date.
+    var createdLabel: String? {
+        guard let createdAt else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = iso.date(from: createdAt)
+            ?? { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f.date(from: createdAt) }()
+        else { return nil }
+        let fmt = RelativeDateTimeFormatter()
+        fmt.unitsStyle = .full
+        return fmt.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+struct SeerRequestPage: Decodable {
+    let results: [SeerRequest]
+
+    private enum CodingKeys: String, CodingKey { case results }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        results = try container.decodeIfPresent([FailableDecodable<SeerRequest>].self, forKey: .results)?
+            .compactMap(\.value) ?? []
+    }
+}
+
+extension SeerDetails {
+    /// Build the lighter `SeerResult` (for shelves and pushing a detail page)
+    /// from a full details payload.
+    func asResult(mediaType: String) -> SeerResult {
+        SeerResult(id: id, mediaType: mediaType, title: title, name: name,
+                   overview: overview, posterPath: posterPath, backdropPath: backdropPath,
+                   releaseDate: releaseDate, firstAirDate: firstAirDate,
+                   voteAverage: voteAverage, popularity: nil, mediaInfo: mediaInfo, knownFor: nil)
     }
 }

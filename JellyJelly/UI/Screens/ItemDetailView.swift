@@ -58,7 +58,7 @@ struct ItemDetailView: View {
             }
             .padding(.bottom, 80)
         }
-        .ignoresSafeArea(edges: .top)
+        .ignoresSafeArea()
     }
 
     // MARK: - Header

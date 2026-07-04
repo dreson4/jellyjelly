@@ -29,6 +29,8 @@ struct DetailFlow: View {
         case .person(let person): PersonItemsView(person: person)
         case .seer(let media): SeerDetailView(media: media)
         case .seerPerson(let member): SeerPersonView(member: member)
+        case .requests: RequestsView()
+        case .discoverCategory(let category): DiscoverCategoryView(category: category)
         }
     }
 }

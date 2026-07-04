@@ -144,6 +144,57 @@ final class JellyseerrClient {
         try await get("tv/\(tvId)/season/\(season)", as: SeerSeasonDetails.self)
     }
 
+    /// Full details by media type + TMDB id (for enriching request/media lists
+    /// that only carry ids).
+    func details(mediaType: String, id: Int) async throws -> SeerDetails {
+        try await get("\(mediaType)/\(id)", as: SeerDetails.self)
+    }
+
+    // MARK: - Requests
+
+    func requests(take: Int = 30, skip: Int = 0,
+                  filter: String = "all", sort: String = "modified") async throws -> [SeerRequest] {
+        try await get("request", query: [
+            "take": String(take), "skip": String(skip), "filter": filter, "sort": sort,
+        ], as: SeerRequestPage.self).results
+    }
+
+    /// Cancels/removes a request.
+    func deleteRequest(id: Int) async throws {
+        var request = URLRequest(url: baseURL.appending(path: "api/v1/request/\(id)"))
+        request.httpMethod = "DELETE"
+        applyAuth(&request)
+        let (_, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 401 || http.statusCode == 403 { throw APIError.unauthorized }
+            guard (200..<300).contains(http.statusCode) else { throw APIError.badStatus(http.statusCode) }
+        }
+    }
+
+    // MARK: - Categories
+
+    func genres(_ mediaType: String) async throws -> [SeerGenre] {
+        try await get("genres/\(mediaType)", as: [SeerGenre].self)
+    }
+
+    func upcomingTV(page: Int = 1) async throws -> [SeerResult] {
+        try await get("discover/tv/upcoming", query: ["page": String(page)], as: SeerPage.self)
+            .results.filter { $0.isMovie || $0.isTV }
+    }
+
+    /// Titles filtered by genre / network / studio (page-based).
+    func discover(_ category: SeerCategory, page: Int = 1) async throws -> [SeerResult] {
+        let path: String
+        switch category.kind {
+        case .movieGenre(let id): path = "discover/movies/genre/\(id)"
+        case .tvGenre(let id):    path = "discover/tv/genre/\(id)"
+        case .network(let id):    path = "discover/tv/network/\(id)"
+        case .studio(let id):     path = "discover/movies/studio/\(id)"
+        }
+        return try await get(path, query: ["page": String(page)], as: SeerPage.self)
+            .results.filter { $0.isMovie || $0.isTV }
+    }
+
     // MARK: - People
 
     /// A person's bio and photo. Some Jellyseerr versions can't resolve
