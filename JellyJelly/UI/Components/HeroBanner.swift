@@ -17,76 +17,82 @@ struct HeroBanner: View {
 
     var body: some View {
         if let item = current {
-            ZStack(alignment: .bottomLeading) {
-                RemoteImage(url: appState.jellyfin?.backdropURL(for: item, maxWidth: 1920))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 680)
-                    .clipped()
-                    .id(item.id)
+            VStack(alignment: .leading, spacing: 22) {
+                Text(item.name ?? "")
+                    .font(.system(size: 64, weight: .heavy))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                    .shadow(color: .black.opacity(0.6), radius: 12, y: 4)
 
-                // Scrims: bottom fade into the page, left fade for text legibility.
-                LinearGradient(
-                    colors: [Theme.background, Theme.background.opacity(0.35), .clear],
-                    startPoint: .bottom, endPoint: .top)
-                LinearGradient(
-                    colors: [Theme.background.opacity(0.9), .clear],
-                    startPoint: .leading, endPoint: UnitPoint(x: 0.65, y: 0.5))
+                Text(item.metadataLine)
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Theme.textSecondary)
 
-                VStack(alignment: .leading, spacing: 22) {
-                    Text(item.name ?? "")
-                        .font(.system(size: 64, weight: .heavy))
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(2)
-                        .shadow(color: .black.opacity(0.6), radius: 12, y: 4)
-
-                    Text(item.metadataLine)
-                        .font(.callout.weight(.medium))
+                if let overview = item.overview, !overview.isEmpty {
+                    Text(overview)
+                        .font(.body)
                         .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(3)
+                        .frame(maxWidth: 820, alignment: .leading)
+                }
 
-                    if let overview = item.overview, !overview.isEmpty {
-                        Text(overview)
-                            .font(.body)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(3)
-                            .frame(maxWidth: 820, alignment: .leading)
+                HStack(spacing: 24) {
+                    Button {
+                        onPlay(item)
+                    } label: {
+                        Label(item.resumePositionSeconds > 0 ? "Resume" : "Play",
+                              systemImage: "play.fill")
                     }
+                    .buttonStyle(PillButtonStyle(prominent: true))
+                    .focused($heroFocused)
 
-                    HStack(spacing: 24) {
-                        Button {
-                            onPlay(item)
-                        } label: {
-                            Label(item.resumePositionSeconds > 0 ? "Resume" : "Play",
-                                  systemImage: "play.fill")
-                        }
-                        .buttonStyle(PillButtonStyle(prominent: true))
-                        .focused($heroFocused)
+                    Button {
+                        onDetails(item)
+                    } label: {
+                        Label("More Info", systemImage: "info.circle")
+                    }
+                    .buttonStyle(PillButtonStyle())
+                    .focused($heroFocused)
 
-                        Button {
-                            onDetails(item)
-                        } label: {
-                            Label("More Info", systemImage: "info.circle")
-                        }
-                        .buttonStyle(PillButtonStyle())
-                        .focused($heroFocused)
-
-                        if items.count > 1 {
-                            HStack(spacing: 8) {
-                                ForEach(0..<items.count, id: \.self) { dot in
-                                    Circle()
-                                        .fill(dot == index % items.count
-                                              ? AnyShapeStyle(Theme.accentGradient)
-                                              : AnyShapeStyle(Color.white.opacity(0.25)))
-                                        .frame(width: 8, height: 8)
-                                }
+                    if items.count > 1 {
+                        HStack(spacing: 8) {
+                            ForEach(0..<items.count, id: \.self) { dot in
+                                Circle()
+                                    .fill(dot == index % items.count
+                                          ? AnyShapeStyle(Theme.accentGradient)
+                                          : AnyShapeStyle(Color.white.opacity(0.25)))
+                                    .frame(width: 8, height: 8)
                             }
-                            .padding(.leading, 12)
                         }
+                        .padding(.leading, 12)
                     }
                 }
-                .padding(.horizontal, 64)
-                .padding(.bottom, 48)
             }
-            .frame(height: 680)
+            // Text and buttons stay in the container, aligned with the shelves below.
+            .padding(.horizontal, 64)
+            .padding(.bottom, 48)
+            .frame(maxWidth: .infinity, minHeight: 680, maxHeight: 680, alignment: .bottomLeading)
+            // The backdrop is a full-bleed background so only the image reaches
+            // the screen edges; the content above keeps the shelf margins.
+            .background(alignment: .bottom) {
+                ZStack {
+                    RemoteImage(url: appState.jellyfin?.backdropURL(for: item, maxWidth: 1920))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 680)
+                        .clipped()
+                        .id(item.id)
+
+                    // Scrims: bottom fade into the page, left fade for text legibility.
+                    LinearGradient(
+                        colors: [Theme.background, Theme.background.opacity(0.35), .clear],
+                        startPoint: .bottom, endPoint: .top)
+                    LinearGradient(
+                        colors: [Theme.background.opacity(0.9), .clear],
+                        startPoint: .leading, endPoint: UnitPoint(x: 0.65, y: 0.5))
+                }
+                .frame(height: 680)
+                .ignoresSafeArea(edges: [.top, .horizontal])
+            }
             .focusSection()
             .onReceive(rotation) { _ in
                 // Don't rotate under the user's cursor — a press right at the
