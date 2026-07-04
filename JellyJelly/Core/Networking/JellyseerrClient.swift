@@ -127,8 +127,16 @@ final class JellyseerrClient {
             .results.filter { $0.isMovie || $0.isTV }
     }
 
+    /// Multi-source ratings. Movies expose Rotten Tomatoes + IMDb via
+    /// `ratingscombined`; series only expose Rotten Tomatoes via `ratings`
+    /// (`ratingscombined` 404s for TV), so IMDb is nil there.
     func ratings(for media: SeerResult) async throws -> SeerRatings {
-        try await get("\(media.mediaType)/\(media.id)/ratings", as: SeerRatings.self)
+        if media.isMovie {
+            return try await get("movie/\(media.id)/ratingscombined", as: SeerRatings.self)
+        } else {
+            let rt = try await get("tv/\(media.id)/ratings", as: SeerRTRating.self)
+            return SeerRatings(rt: rt, imdb: nil)
+        }
     }
 
     /// Episodes (with stills, air dates, overviews) for one season of a series.
@@ -212,7 +220,36 @@ final class JellyseerrClient {
     private static let strictQueryAllowed = CharacterSet(
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 
-    private func get<T: Decodable>(_ path: String, query: [String: String] = [:], as type: T.Type) async throws -> T {
+    /// GET with automatic retry. Jellyseerr's TMDB-backed endpoints (discover,
+    /// season episodes, ratings) 500 or drop the connection transiently, so we
+    /// repeat a few times before giving up. Client errors (4xx) and decode
+    /// failures aren't retried — repeating won't fix them.
+    private func get<T: Decodable>(_ path: String, query: [String: String] = [:],
+                                   as type: T.Type, attempts: Int = 3) async throws -> T {
+        var lastError: Error = APIError.badStatus(0)
+        for attempt in 0..<attempts {
+            do {
+                return try await performGet(path, query: query, as: type)
+            } catch {
+                lastError = error
+                guard Self.isRetryable(error), attempt < attempts - 1, !Task.isCancelled else { throw error }
+                try? await Task.sleep(for: .milliseconds(350 * (attempt + 1)))
+                if Task.isCancelled { throw error }
+            }
+        }
+        throw lastError
+    }
+
+    private static func isRetryable(_ error: Error) -> Bool {
+        guard let api = error as? APIError else { return false }
+        switch api {
+        case .network: return true                     // dropped connection, timeout
+        case .badStatus(let code): return code >= 500 || code == 429
+        default: return false                          // 4xx, decoding: deterministic
+        }
+    }
+
+    private func performGet<T: Decodable>(_ path: String, query: [String: String], as type: T.Type) async throws -> T {
         var components = URLComponents(
             url: baseURL.appending(path: "api/v1/\(path)"),
             resolvingAgainstBaseURL: false)!

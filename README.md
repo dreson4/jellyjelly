@@ -23,11 +23,12 @@ no third-party dependencies.
   (resume positions, watched state, Next Up all stay in sync)
 - **Search** — Jellyfin library search
 - **Discover** (optional, needs Jellyseerr) — Trending / Popular / Coming Soon shelves,
-  TMDB search, and full detail pages: backdrop hero, ratings (Rotten Tomatoes +
-  TMDB), a season/episode browser for series, a circular cast row that opens
-  person pages (bio + "Known For"), recommendations and similar titles. Movies
-  request in one press; series open a Jellyseerr-style **Request Series** sheet
-  with per-season toggles, episode counts and availability status
+  TMDB search, and full detail pages: backdrop hero, a dedicated ratings line
+  (Rotten Tomatoes critics & audience, IMDb, TMDB), a season/episode browser
+  for series (a season loads the moment you focus its chip — no click), a
+  circular cast row that opens person pages (bio + "Known For"), recommendations
+  and similar titles. Movies request in one press; series open a Jellyseerr-style
+  **Request Series** sheet with per-season toggles, episode counts and availability
 - **Settings** — server info, Jellyseerr connect/disconnect, sign out
 
 ## Running
@@ -107,6 +108,9 @@ blanks search), page results drop malformed entries instead of failing
 wholesale, query values are strictly percent-encoded (3.x rejects unescaped
 reserved characters — apostrophes in a title used to 400), and Discover
 shelves load independently because the TMDB-backed endpoints 500 transiently.
+Those same endpoints (season episodes, ratings) are also retried a few times on
+5xx/timeout before giving up, loaded season-episode lists are cached per season,
+and a failed load shows a Retry button instead of a silent blank.
 
 Notes: credentials are stored in UserDefaults (fine for a personal test build —
 move the token to Keychain before distributing). The Jellyfin access token is

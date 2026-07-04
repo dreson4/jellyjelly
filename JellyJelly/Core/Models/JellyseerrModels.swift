@@ -267,9 +267,33 @@ struct SeerDetails: Decodable {
 }
 
 /// Rotten Tomatoes scores, when Jellyseerr can resolve them.
-struct SeerRatings: Decodable {
+struct SeerRTRating: Decodable {
     let criticsScore: Int?
+    let criticsRating: String?     // "Fresh" | "Rotten" | "Certified Fresh"
     let audienceScore: Int?
+    let audienceRating: String?    // "Upright" | "Spilled"
+
+    /// The Tomatometer is "fresh" at 60%+, which RT flags via criticsRating.
+    var criticsFresh: Bool {
+        (criticsRating?.localizedCaseInsensitiveContains("fresh") ?? false)
+    }
+}
+
+struct SeerIMDbRating: Decodable {
+    let criticsScore: Double?      // IMDb score, out of 10
+}
+
+/// Ratings from multiple sources. Movies come from `ratingscombined`
+/// (Rotten Tomatoes + IMDb); series only expose Rotten Tomatoes via `ratings`,
+/// so `imdb` is nil there.
+struct SeerRatings: Decodable {
+    let rt: SeerRTRating?
+    let imdb: SeerIMDbRating?
+
+    init(rt: SeerRTRating?, imdb: SeerIMDbRating?) {
+        self.rt = rt
+        self.imdb = imdb
+    }
 }
 
 // MARK: - People (person/{id} + person/{id}/combined_credits)

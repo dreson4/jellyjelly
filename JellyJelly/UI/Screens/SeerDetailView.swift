@@ -20,6 +20,12 @@ struct SeerDetailView: View {
     @State private var selectedSeason: Int?
     @State private var episodes: [SeerEpisode] = []
     @State private var loadingEpisodes = false
+    @State private var episodeError = false
+    /// Episodes already fetched this session, keyed by season, so revisiting a
+    /// season is instant and never re-hits the flaky endpoint.
+    @State private var episodesBySeason: [Int: [SeerEpisode]] = [:]
+    /// Focusing a season chip loads it (hover-to-load), no click needed.
+    @FocusState private var focusedSeason: Int?
 
     @State private var showRequestSheet = false
     @State private var isRequesting = false
@@ -113,6 +119,8 @@ struct SeerDetailView: View {
 
                     metadataRow
 
+                    ratingsRow
+
                     if let overview = details?.overview ?? media.overview, !overview.isEmpty {
                         Text(overview)
                             .font(.body)
@@ -152,28 +160,74 @@ struct SeerDetailView: View {
                     .font(.callout)
                     .foregroundStyle(Theme.textTertiary)
             }
-
-            if let critics = ratings?.criticsScore {
-                ratingBadge(icon: "rosette", text: "\(critics)%")
-            }
-            if let audience = ratings?.audienceScore {
-                ratingBadge(icon: "popcorn.fill", text: "\(audience)%")
-            }
-            if let vote = details?.voteAverage ?? media.voteAverage, vote > 0 {
-                ratingBadge(icon: "star.fill", text: String(format: "%.1f", vote))
-            }
         }
     }
 
-    private func ratingBadge(icon: String, text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(Theme.accentGradient)
-            Text(text)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(Theme.textSecondary)
+    /// A dedicated line for ratings from every source Jellyseerr resolves:
+    /// Rotten Tomatoes critics & audience, IMDb, and TMDB.
+    @ViewBuilder
+    private var ratingsRow: some View {
+        let tmdb = details?.voteAverage ?? media.voteAverage
+        let hasAny = ratings?.rt?.criticsScore != nil
+            || ratings?.rt?.audienceScore != nil
+            || ratings?.imdb?.criticsScore != nil
+            || (tmdb ?? 0) > 0
+        if hasAny {
+            HStack(spacing: 14) {
+                if let critics = ratings?.rt?.criticsScore {
+                    let rotten = ratings?.rt?.criticsRating?.localizedCaseInsensitiveContains("rotten") == true
+                    ratingPill(glyph: .emoji(rotten ? "🤢" : "🍅"),
+                               value: "\(critics)%", caption: "Tomatometer")
+                }
+                if let audience = ratings?.rt?.audienceScore {
+                    ratingPill(glyph: .emoji("🍿"), value: "\(audience)%", caption: "Audience")
+                }
+                if let imdb = ratings?.imdb?.criticsScore, imdb > 0 {
+                    ratingPill(glyph: .imdb, value: String(format: "%.1f", imdb), caption: "IMDb")
+                }
+                if let tmdb, tmdb > 0 {
+                    ratingPill(glyph: .symbol("star.fill"), value: String(format: "%.1f", tmdb), caption: "TMDB")
+                }
+            }
+            .padding(.top, 2)
         }
+    }
+
+    private enum RatingGlyph {
+        case emoji(String)
+        case symbol(String)
+        case imdb
+    }
+
+    private func ratingPill(glyph: RatingGlyph, value: String, caption: String) -> some View {
+        HStack(spacing: 12) {
+            switch glyph {
+            case .emoji(let text):
+                Text(text).font(.title2)
+            case .symbol(let name):
+                Image(systemName: name)
+                    .font(.title3)
+                    .foregroundStyle(Color(hex: 0x01B4E4))   // TMDB cyan
+            case .imdb:
+                Text("IMDb")
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Color(hex: 0xF5C518)))
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(Color.white.opacity(0.07)))
     }
 
     @ViewBuilder
@@ -245,6 +299,10 @@ struct SeerDetailView: View {
                 }
                 .scrollClipDisabled()
                 .focusSection()
+                // Load whichever season the remote is resting on, without a click.
+                .onChange(of: focusedSeason) { _, focused in
+                    if let focused { selectedSeason = focused }
+                }
 
                 episodeStrip
             }
@@ -268,6 +326,7 @@ struct SeerDetailView: View {
             }
         }
         .buttonStyle(ChipButtonStyle(isSelected: selectedSeason == n))
+        .focused($focusedSeason, equals: n)
     }
 
     private func statusTint(_ status: SeerMediaStatus) -> Color {
@@ -290,6 +349,21 @@ struct SeerDetailView: View {
             }
             .padding(.horizontal, 64)
             .padding(.vertical, 30)
+        } else if episodeError {
+            HStack(spacing: 20) {
+                Text("Couldn't load episodes.")
+                    .font(.callout)
+                    .foregroundStyle(Theme.textSecondary)
+                Button {
+                    retryEpisodes()
+                } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(ChipButtonStyle(isSelected: false))
+            }
+            .padding(.horizontal, 64)
+            .padding(.vertical, 24)
+            .focusSection()
         } else if !episodes.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 28) {
@@ -357,13 +431,40 @@ struct SeerDetailView: View {
 
     private func loadEpisodesForSelection() async {
         guard media.isTV, let n = selectedSeason, let seer = appState.jellyseerr else { return }
-        loadingEpisodes = true
-        episodes = []
-        let loaded = (try? await seer.seasonDetails(tvId: media.id, season: n))?.episodes ?? []
-        if !Task.isCancelled {
-            episodes = loaded
+
+        // Already fetched this season → show instantly, no network round-trip.
+        if let cached = episodesBySeason[n] {
+            episodes = cached
             loadingEpisodes = false
+            episodeError = false
+            return
         }
+
+        loadingEpisodes = true
+        episodeError = false
+        episodes = []
+        do {
+            // The client retries transient failures; if it still throws we
+            // surface a Retry button rather than a silent blank.
+            let loaded = try await seer.seasonDetails(tvId: media.id, season: n).episodes
+            guard !Task.isCancelled else { return }
+            episodesBySeason[n] = loaded
+            if selectedSeason == n {
+                episodes = loaded
+                loadingEpisodes = false
+            }
+        } catch {
+            guard !Task.isCancelled, selectedSeason == n else { return }
+            episodes = []
+            loadingEpisodes = false
+            episodeError = true
+        }
+    }
+
+    private func retryEpisodes() {
+        guard let n = selectedSeason else { return }
+        episodesBySeason[n] = nil
+        Task { await loadEpisodesForSelection() }
     }
 
     private func requestMovie() async {
