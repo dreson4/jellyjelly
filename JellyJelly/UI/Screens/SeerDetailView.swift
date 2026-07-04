@@ -173,7 +173,7 @@ struct SeerDetailView: View {
             || ratings?.imdb?.criticsScore != nil
             || (tmdb ?? 0) > 0
         if hasAny {
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 if let critics = ratings?.rt?.criticsScore {
                     let rotten = ratings?.rt?.criticsRating?.localizedCaseInsensitiveContains("rotten") == true
                     ratingPill(glyph: .emoji(rotten ? "🤢" : "🍅"),
@@ -200,33 +200,33 @@ struct SeerDetailView: View {
     }
 
     private func ratingPill(glyph: RatingGlyph, value: String, caption: String) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             switch glyph {
             case .emoji(let text):
-                Text(text).font(.title2)
+                Text(text).font(.body)
             case .symbol(let name):
                 Image(systemName: name)
-                    .font(.title3)
+                    .font(.subheadline)
                     .foregroundStyle(Color(hex: 0x01B4E4))   // TMDB cyan
             case .imdb:
                 Text("IMDb")
-                    .font(.caption.weight(.heavy))
+                    .font(.caption2.weight(.heavy))
                     .foregroundStyle(.black)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(Color(hex: 0xF5C518)))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color(hex: 0xF5C518)))
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(value)
-                    .font(.title3.weight(.bold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(Theme.textPrimary)
                 Text(caption)
                     .font(.caption2)
                     .foregroundStyle(Theme.textTertiary)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 7)
         .background(Capsule().fill(Color.white.opacity(0.07)))
     }
 
