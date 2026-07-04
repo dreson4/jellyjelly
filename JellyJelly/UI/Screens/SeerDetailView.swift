@@ -8,11 +8,9 @@ import SwiftUI
 struct SeerDetailView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var ambience: Ambience
+    @Environment(\.detailPush) private var push
 
     let media: SeerResult
-    let onSelect: (SeerResult) -> Void
-    let onSelectPerson: (SeerCastMember) -> Void
-    let onRequested: (SeerResult) -> Void
 
     @State private var details: SeerDetails?
     @State private var ratings: SeerRatings?
@@ -29,6 +27,8 @@ struct SeerDetailView: View {
     @State private var requestError: String?
     /// Seasons we've requested this session, so their badges flip immediately.
     @State private var pendingSeasons: Set<Int> = []
+    /// Give the request button initial focus instead of the back button.
+    @FocusState private var requestFocused: Bool
 
     private var status: SeerMediaStatus {
         if requestDone { return .pending }
@@ -52,12 +52,14 @@ struct SeerDetailView: View {
                 header
                 seasonsSection
                 castShelf
-                SeerShelf(title: "Recommendations", items: recommendations, onSelect: onSelect)
-                SeerShelf(title: "Similar Titles", items: similar, onSelect: onSelect)
+                SeerShelf(title: "Recommendations", items: recommendations) { push(.seer($0)) }
+                SeerShelf(title: "Similar Titles", items: similar) { push(.seer($0)) }
             }
             .padding(.bottom, 80)
         }
         .ignoresSafeArea(edges: .top)
+        .detailBackButton()
+        .defaultFocus($requestFocused, true)
         .task { await load() }
         .task(id: selectedSeason) { await loadEpisodesForSelection() }
         .sheet(isPresented: $showRequestSheet) {
@@ -66,7 +68,6 @@ struct SeerDetailView: View {
                 do {
                     try await seer.request(media, seasons: seasons)
                     pendingSeasons.formUnion(seasons)
-                    onRequested(media)
                     return nil
                 } catch {
                     return "Request failed. \(error.localizedDescription)"
@@ -189,6 +190,7 @@ struct SeerDetailView: View {
                     Label("Request Seasons", systemImage: "plus.circle.fill")
                 }
                 .buttonStyle(PillButtonStyle(prominent: true))
+                .focused($requestFocused)
 
                 if status != .unknown {
                     StatusBadge(status: status)
@@ -206,6 +208,7 @@ struct SeerDetailView: View {
                         }
                     }
                     .buttonStyle(PillButtonStyle(prominent: true))
+                    .focused($requestFocused)
                     .disabled(isRequesting)
                 default:
                     if requestDone {
@@ -320,7 +323,7 @@ struct SeerDetailView: View {
                             CastCard(imageURL: member.imageURL,
                                      name: member.name ?? "",
                                      subtitle: member.character) {
-                                onSelectPerson(member)
+                                push(.seerPerson(member))
                             }
                         }
                     }
@@ -370,7 +373,6 @@ struct SeerDetailView: View {
         do {
             try await seer.request(media)
             requestDone = true
-            onRequested(media)
         } catch {
             requestError = "Request failed. \(error.localizedDescription)"
         }

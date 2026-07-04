@@ -5,6 +5,7 @@ import SwiftUI
 struct ItemDetailView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var ambience: Ambience
+    @Environment(\.detailPush) private var push
     let itemId: String
 
     @State private var item: BaseItem?
@@ -14,6 +15,8 @@ struct ItemDetailView: View {
     @State private var similar: [BaseItem] = []
     @State private var loadError: String?
     @State private var playback: PlaybackRequest?
+    /// Give the Play button initial focus instead of the back button.
+    @FocusState private var playFocused: Bool
 
     var body: some View {
         Group {
@@ -25,6 +28,8 @@ struct ItemDetailView: View {
                 LoadingView()
             }
         }
+        .detailBackButton()
+        .defaultFocus($playFocused, true)
         .task { await load() }
         .fullScreenCover(item: $playback) { request in
             PlayerScreen(request: request)
@@ -49,7 +54,7 @@ struct ItemDetailView: View {
 
                 castShelf(for: item)
 
-                NavigationShelf(title: "More Like This", items: similar)
+                NavigationShelf(title: "More Like This", items: similar) { push(.item($0.id)) }
             }
             .padding(.bottom, 80)
         }
@@ -114,6 +119,7 @@ struct ItemDetailView: View {
                 Label(playLabel(for: item), systemImage: "play.fill")
             }
             .buttonStyle(PillButtonStyle(prominent: true))
+            .focused($playFocused)
 
             if item.resumePositionSeconds > 60 {
                 Button {
@@ -202,7 +208,9 @@ struct ItemDetailView: View {
                     LazyHStack(alignment: .top, spacing: Theme.shelfSpacing) {
                         ForEach(Array(cast)) { person in
                             VStack(spacing: 12) {
-                                NavigationLink(value: person) {
+                                Button {
+                                    push(.person(person))
+                                } label: {
                                     PersonHeadshot(url: appState.jellyfin?.personImageURL(person))
                                 }
                                 .buttonStyle(CircleButtonStyle())

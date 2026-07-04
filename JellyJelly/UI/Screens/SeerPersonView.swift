@@ -7,9 +7,9 @@ import SwiftUI
 struct SeerPersonView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var ambience: Ambience
+    @Environment(\.detailPush) private var push
 
     let member: SeerCastMember
-    let onSelect: (SeerResult) -> Void
 
     @State private var person: SeerPerson?
     @State private var credits: [SeerResult] = []
@@ -30,12 +30,13 @@ struct SeerPersonView: View {
                     }
                     .padding(.vertical, 80)
                 } else {
-                    SeerShelf(title: "Known For", items: credits, onSelect: onSelect)
+                    SeerShelf(title: "Known For", items: credits) { push(.seer($0)) }
                 }
             }
             .padding(.bottom, 80)
         }
         .ignoresSafeArea(edges: .top)
+        .detailBackButton()
         .task { await load() }
     }
 

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var ambience: Ambience
+    @StateObject private var router = Router()
 
     private enum Tab: Hashable {
         case home, movies, shows, search, discover, settings
@@ -47,9 +49,18 @@ struct RootView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
                 .tag(Tab.settings)
         }
+        .environmentObject(router)
         .onChange(of: appState.jellyseerr == nil) { _, seerGone in
             // If the selected Discover tab just disappeared, land somewhere real.
             if seerGone && selection == .discover { selection = .home }
+        }
+        // Detail pages present here, above the whole TabView, so opening a title
+        // hides the tabs entirely and Menu/Back returns to the tab you were on.
+        .fullScreenCover(item: $router.route) { route in
+            DetailFlow(root: route)
+                .environmentObject(appState)
+                .environmentObject(ambience)
+                .environmentObject(router)
         }
     }
 }

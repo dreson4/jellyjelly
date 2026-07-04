@@ -4,8 +4,8 @@ import SwiftUI
 /// detail pages with requesting.
 struct DiscoverView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var router: Router
 
-    @State private var path = NavigationPath()
     @State private var trending: [SeerResult] = []
     @State private var popularMovies: [SeerResult] = []
     @State private var popularTV: [SeerResult] = []
@@ -19,7 +19,7 @@ struct DiscoverView: View {
     @State private var searchError: String?
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack {
             Group {
                 // Search first: a failed shelf load must never block searching.
                 if !searchQuery.isEmpty {
@@ -33,15 +33,6 @@ struct DiscoverView: View {
                 }
             }
             .searchable(text: $searchQuery, placement: .automatic, prompt: "Find something new…")
-            .navigationDestination(for: SeerResult.self) { media in
-                SeerDetailView(media: media,
-                               onSelect: { path.append($0) },
-                               onSelectPerson: { path.append($0) },
-                               onRequested: { markRequested($0) })
-            }
-            .navigationDestination(for: SeerCastMember.self) { member in
-                SeerPersonView(member: member, onSelect: { path.append($0) })
-            }
         }
         .task { await load() }
         .task(id: searchQuery) { await runSearch() }
@@ -58,10 +49,10 @@ struct DiscoverView: View {
                     .padding(.horizontal, 64)
                     .padding(.top, 24)
 
-                SeerShelf(title: "Trending Now", items: trending) { path.append($0) }
-                SeerShelf(title: "Popular Movies", items: popularMovies) { path.append($0) }
-                SeerShelf(title: "Popular Series", items: popularTV) { path.append($0) }
-                SeerShelf(title: "Coming Soon", items: upcoming) { path.append($0) }
+                SeerShelf(title: "Trending Now", items: trending) { router.open(.seer($0)) }
+                SeerShelf(title: "Popular Movies", items: popularMovies) { router.open(.seer($0)) }
+                SeerShelf(title: "Popular Series", items: popularTV) { router.open(.seer($0)) }
+                SeerShelf(title: "Coming Soon", items: upcoming) { router.open(.seer($0)) }
             }
             .padding(.bottom, 80)
         }
@@ -89,7 +80,7 @@ struct DiscoverView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: Theme.posterWidth), spacing: Theme.shelfSpacing)],
                       spacing: 48) {
                 ForEach(searchResults) { media in
-                    SeerPosterCard(media: media) { path.append(media) }
+                    SeerPosterCard(media: media) { router.open(.seer(media)) }
                 }
             }
             .padding(.horizontal, 64)
@@ -162,19 +153,5 @@ struct DiscoverView: View {
             loadError = firstError.localizedDescription
         }
         isLoading = false
-    }
-
-    /// Flip the local status so badges update without refetching everything.
-    private func markRequested(_ media: SeerResult) {
-        func update(_ list: inout [SeerResult]) {
-            for index in list.indices where list[index].id == media.id {
-                list[index].mediaInfo = SeerMediaInfo(status: .pending)
-            }
-        }
-        update(&trending)
-        update(&popularMovies)
-        update(&popularTV)
-        update(&upcoming)
-        update(&searchResults)
     }
 }

@@ -6,6 +6,7 @@ import SwiftUI
 struct PersonItemsView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var ambience: Ambience
+    @Environment(\.detailPush) private var push
 
     let person: BaseItemPerson
 
@@ -39,6 +40,7 @@ struct PersonItemsView: View {
             .padding(.bottom, 80)
         }
         .scrollClipDisabled()
+        .detailBackButton()
         .task { await load() }
     }
 
@@ -74,7 +76,9 @@ struct PersonItemsView: View {
         LazyVGrid(columns: columns, spacing: 48) {
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 12) {
-                    NavigationLink(value: item) {
+                    Button {
+                        push(.item(item.id))
+                    } label: {
                         PosterCardLabel(item: item)
                     }
                     .buttonStyle(.card)

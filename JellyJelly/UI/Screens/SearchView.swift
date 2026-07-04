@@ -3,6 +3,7 @@ import SwiftUI
 /// Searches the Jellyfin library (movies + series).
 struct SearchView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var router: Router
 
     @State private var query = ""
     @State private var results: [BaseItem] = []
@@ -22,12 +23,6 @@ struct SearchView: View {
                 }
             }
             .searchable(text: $query, placement: .automatic, prompt: "Movies, shows…")
-            .navigationDestination(for: BaseItem.self) { item in
-                ItemDetailView(itemId: item.id)
-            }
-            .navigationDestination(for: BaseItemPerson.self) { person in
-                PersonItemsView(person: person)
-            }
         }
         .task(id: query) {
             guard !query.isEmpty else {
@@ -48,7 +43,9 @@ struct SearchView: View {
             LazyVGrid(columns: columns, spacing: 48) {
                 ForEach(results) { item in
                     VStack(alignment: .leading, spacing: 12) {
-                        NavigationLink(value: item) {
+                        Button {
+                            router.open(.item(item.id))
+                        } label: {
                             PosterCardLabel(item: item)
                         }
                         .buttonStyle(.card)

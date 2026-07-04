@@ -85,12 +85,21 @@ JellyJelly/
 Config/Info.plist             # ATS exception for plain-HTTP servers
 ```
 
+Detail pages present as a full-screen cover **above** the TabView (an app-level
+`Router` drives one `fullScreenCover`), so opening a title from anywhere hides
+the tabs entirely and returns you — via the on-screen back button or the remote's
+Menu button — to exactly the tab and scroll position you left. The cover owns its
+own `NavigationStack`, so cast → person → title chains push and pop one level at a
+time. (When detail pages were pushed *inside* each tab's stack instead, the tab
+bar floated over them and intercepted the Menu button, making "back" unreliable.)
+
 tvOS quirks encoded in the UI: segmented pickers change selection as focus
 passes over them, so sorting uses explicit chip buttons; grids sit in their own
 `focusSection` so focus can always route down from the header; library reloads
 swap data atomically so re-sorting never blanks the screen or drops focus; the
 TabView keeps an explicit selection binding, otherwise sheets and server edits
-silently reset it to the first tab.
+silently reset it to the first tab; detail pages use `defaultFocus` to land on
+the primary action (Play / Request) rather than the back button.
 
 Jellyseerr 3.x quirks encoded in the client: media status decodes leniently
 (3.x added values like 6 = deleted; a strict enum fails the whole page and

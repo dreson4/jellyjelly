@@ -27,6 +27,7 @@ enum LibrarySort: String, CaseIterable, Identifiable {
 /// Paged poster grid over a whole library (all movies or all shows).
 struct LibraryView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var router: Router
     let kind: LibraryKind
 
     @State private var items: [BaseItem] = []
@@ -41,21 +42,13 @@ struct LibraryView: View {
     private let columns = [GridItem(.adaptive(minimum: Theme.posterWidth), spacing: Theme.shelfSpacing)]
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if !hasLoaded {
-                    LoadingView()
-                } else if let loadError, items.isEmpty {
-                    ErrorView(message: loadError) { await reload() }
-                } else {
-                    grid
-                }
-            }
-            .navigationDestination(for: BaseItem.self) { item in
-                ItemDetailView(itemId: item.id)
-            }
-            .navigationDestination(for: BaseItemPerson.self) { person in
-                PersonItemsView(person: person)
+        Group {
+            if !hasLoaded {
+                LoadingView()
+            } else if let loadError, items.isEmpty {
+                ErrorView(message: loadError) { await reload() }
+            } else {
+                grid
             }
         }
         .task {
@@ -71,7 +64,9 @@ struct LibraryView: View {
                 LazyVGrid(columns: columns, spacing: 48) {
                     ForEach(items) { item in
                         VStack(alignment: .leading, spacing: 12) {
-                            NavigationLink(value: item) {
+                            Button {
+                                router.open(.item(item.id))
+                            } label: {
                                 PosterCardLabel(item: item)
                             }
                             .buttonStyle(.card)

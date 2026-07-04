@@ -132,6 +132,32 @@ struct ChipButtonStyle: ButtonStyle {
     }
 }
 
+/// Floating "back" affordance for full-screen detail pages. Uses the
+/// environment `dismiss`, so inside the detail flow it pops one level, and at
+/// the flow's root it dismisses the whole cover — returning to the tab the
+/// user came from.
+struct DetailBackButton: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Button { dismiss() } label: {
+            Image(systemName: "chevron.left")
+        }
+        .buttonStyle(IconButtonStyle())
+    }
+}
+
+extension View {
+    /// Overlays a back button in the top-left of a detail page.
+    func detailBackButton() -> some View {
+        overlay(alignment: .topLeading) {
+            DetailBackButton()
+                .padding(.top, 36)
+                .padding(.leading, 48)
+        }
+    }
+}
+
 /// Small capsule tag: "Available", "Requested", genre chips…
 struct Badge: View {
     let text: String

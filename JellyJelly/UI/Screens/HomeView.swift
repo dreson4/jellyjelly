@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var router: Router
 
     @State private var heroItems: [BaseItem] = []
     @State private var resumeItems: [BaseItem] = []
@@ -10,24 +11,15 @@ struct HomeView: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var playback: PlaybackRequest?
-    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                if isLoading {
-                    LoadingView()
-                } else if let loadError {
-                    ErrorView(message: loadError) { await load() }
-                } else {
-                    content
-                }
-            }
-            .navigationDestination(for: BaseItem.self) { item in
-                ItemDetailView(itemId: item.id)
-            }
-            .navigationDestination(for: BaseItemPerson.self) { person in
-                PersonItemsView(person: person)
+        Group {
+            if isLoading {
+                LoadingView()
+            } else if let loadError {
+                ErrorView(message: loadError) { await load() }
+            } else {
+                content
             }
         }
         .task { await load() }
@@ -48,7 +40,7 @@ struct HomeView: View {
                 HeroBanner(
                     items: heroItems,
                     onPlay: { playback = PlaybackRequest(item: $0) },
-                    onDetails: { path.append($0) })
+                    onDetails: { router.open(.item($0.id)) })
 
                 Shelf(title: "Continue Watching", items: resumeItems, style: .wide) { item in
                     playback = PlaybackRequest(item: item)
@@ -58,7 +50,7 @@ struct HomeView: View {
                 }
                 ForEach(latestByLibrary, id: \.library.id) { entry in
                     NavigationShelf(title: "New in \(entry.library.name ?? "Library")",
-                                    items: entry.items)
+                                    items: entry.items) { router.open(.item($0.id)) }
                 }
             }
             .padding(.bottom, 80)
@@ -115,11 +107,12 @@ struct HomeView: View {
     }
 }
 
-/// Shelf whose cards push a detail screen.
+/// Shelf whose cards open a detail screen via the passed-in action.
 struct NavigationShelf: View {
     @EnvironmentObject private var appState: AppState
     let title: String
     let items: [BaseItem]
+    let onSelect: (BaseItem) -> Void
 
     var body: some View {
         if !items.isEmpty {
@@ -132,7 +125,9 @@ struct NavigationShelf: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: Theme.shelfSpacing) {
                         ForEach(items) { item in
-                            NavigationLink(value: item) {
+                            Button {
+                                onSelect(item)
+                            } label: {
                                 PosterCardLabel(item: item)
                             }
                             .buttonStyle(.card)
