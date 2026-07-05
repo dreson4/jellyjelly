@@ -5,6 +5,7 @@ import SwiftUI
 struct DiscoverView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var router: Router
+    @StateObject private var prefetcher = SeerPrefetchCoordinator()
 
     @State private var trending: [SeerResult] = []
     @State private var popularMovies: [SeerResult] = []
@@ -83,18 +84,28 @@ struct DiscoverView: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
 
-                SeerShelf(title: "Trending Now", items: trending) { router.open(.seer($0)) }
-                SeerShelf(title: "Popular Movies", items: popularMovies) { router.open(.seer($0)) }
+                SeerShelf(title: "Trending Now", items: trending,
+                          onSelect: { router.open(.seer($0)) },
+                          onPrefetch: prefetch)
+                SeerShelf(title: "Popular Movies", items: popularMovies,
+                          onSelect: { router.open(.seer($0)) },
+                          onPrefetch: prefetch)
                 CategoryShelf(title: "Movie Genres", categories: genreCategories(movieGenres, tv: false)) {
                     router.open(.discoverCategory($0))
                 }
-                SeerShelf(title: "Coming Soon", items: upcoming) { router.open(.seer($0)) }
+                SeerShelf(title: "Coming Soon", items: upcoming,
+                          onSelect: { router.open(.seer($0)) },
+                          onPrefetch: prefetch)
                 CategoryShelf(title: "Studios", categories: Self.studios) { router.open(.discoverCategory($0)) }
-                SeerShelf(title: "Popular Series", items: popularTV) { router.open(.seer($0)) }
+                SeerShelf(title: "Popular Series", items: popularTV,
+                          onSelect: { router.open(.seer($0)) },
+                          onPrefetch: prefetch)
                 CategoryShelf(title: "Series Genres", categories: genreCategories(tvGenres, tv: true)) {
                     router.open(.discoverCategory($0))
                 }
-                SeerShelf(title: "Upcoming Series", items: upcomingTV) { router.open(.seer($0)) }
+                SeerShelf(title: "Upcoming Series", items: upcomingTV,
+                          onSelect: { router.open(.seer($0)) },
+                          onPrefetch: prefetch)
                 CategoryShelf(title: "Networks", categories: Self.networks) { router.open(.discoverCategory($0)) }
             }
             .padding(.bottom, 80)
@@ -103,9 +114,12 @@ struct DiscoverView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Discover")
-                .font(.largeTitle.weight(.bold))
-                .foregroundStyle(Theme.textPrimary)
+            HStack(spacing: 18) {
+                BrandLogo(size: 72, cornerRadius: 18)
+                Text("Discover")
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(Theme.textPrimary)
+            }
 
             HStack(spacing: 14) {
                 Button {
@@ -143,7 +157,9 @@ struct DiscoverView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: Theme.posterWidth), spacing: Theme.shelfSpacing)],
                       spacing: 48) {
                 ForEach(searchResults) { media in
-                    SeerPosterCard(media: media) { router.open(.seer(media)) }
+                    SeerPosterCard(media: media,
+                                   action: { router.open(.seer(media)) },
+                                   onPrefetch: { prefetch(media) })
                 }
             }
             .padding(.horizontal, 64)
@@ -189,6 +205,10 @@ struct DiscoverView: View {
             searchError = error.localizedDescription
             isSearching = false
         }
+    }
+
+    private func prefetch(_ media: SeerResult) {
+        prefetcher.schedule(media, using: appState.jellyseerr)
     }
 
     // MARK: - Loading

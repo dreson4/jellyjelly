@@ -19,9 +19,11 @@ final class Ambience: ObservableObject {
         pending = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  let loaded = UIImage(data: data),
-                  !Task.isCancelled, self?.currentURL == url else { return }
+            let loaded = await Task.detached(priority: .utility) { () -> UIImage? in
+                guard let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+                return UIImage(data: data)
+            }.value
+            guard let loaded, !Task.isCancelled, self?.currentURL == url else { return }
             withAnimation(.easeInOut(duration: 1.4)) {
                 self?.image = loaded
             }
@@ -48,11 +50,11 @@ struct AmbientBackground: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
-                        .blur(radius: 90)
-                        .scaleEffect(1.2)   // push the blur's edge vignette offscreen
-                        .saturation(1.6)
+                        .blur(radius: 44)
+                        .scaleEffect(1.08)
+                        .saturation(1.25)
                 }
-                .opacity(0.35)
+                .opacity(0.24)
                 .transition(.opacity)
                 .id(image)
             }

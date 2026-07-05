@@ -5,6 +5,7 @@ import SwiftUI
 struct DiscoverCategoryView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.detailPush) private var push
+    @StateObject private var prefetcher = SeerPrefetchCoordinator()
 
     let category: SeerCategory
 
@@ -65,7 +66,9 @@ struct DiscoverCategoryView: View {
     private var grid: some View {
         LazyVGrid(columns: columns, spacing: 48) {
             ForEach(items) { media in
-                SeerPosterCard(media: media) { push(.seer(media)) }
+                SeerPosterCard(media: media,
+                               action: { push(.seer(media)) },
+                               onPrefetch: { prefetch(media) })
                     .onAppear {
                         if media.id == items.last?.id { Task { await loadMore() } }
                     }
@@ -101,5 +104,9 @@ struct DiscoverCategoryView: View {
             page += 1
         }
         loadingMore = false
+    }
+
+    private func prefetch(_ media: SeerResult) {
+        prefetcher.schedule(media, using: appState.jellyseerr)
     }
 }

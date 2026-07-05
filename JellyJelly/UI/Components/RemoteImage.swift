@@ -1,26 +1,50 @@
+import Kingfisher
 import SwiftUI
+import UIKit
 
-/// AsyncImage with a themed placeholder and a soft fade-in.
+/// Kingfisher-backed remote image with downsampling, disk/memory cache, and
+/// cancellation handled by the library.
 struct RemoteImage: View {
     let url: URL?
-    var contentMode: ContentMode = .fill
+    var contentMode: SwiftUI.ContentMode = .fill
+
+    @State private var failedURL: URL?
 
     var body: some View {
-        AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.25))) { phase in
-            switch phase {
-            case .success(let image):
-                image
+        GeometryReader { proxy in
+            if let url {
+                KFImage.url(url)
+                    .placeholder { placeholder(icon: nil) }
+                    .setProcessor(DownsamplingImageProcessor(size: targetSize(for: proxy.size)))
+                    .scaleFactor(UIScreen.main.scale)
+                    .cacheOriginalImage()
+                    .fade(duration: 0.12)
+                    .cancelOnDisappear(true)
+                    .onSuccess { _ in
+                        if failedURL == url { failedURL = nil }
+                    }
+                    .onFailure { _ in
+                        failedURL = url
+                    }
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
-                    .transition(.opacity)
-            case .failure:
-                placeholder(icon: "photo")
-            case .empty:
-                placeholder(icon: nil)
-            @unknown default:
+                    .overlay {
+                        if failedURL == url {
+                            placeholder(icon: "photo")
+                        }
+                    }
+            } else {
                 placeholder(icon: nil)
             }
         }
+        .clipped()
+        .onChange(of: url) { _, _ in
+            failedURL = nil
+        }
+    }
+
+    private func targetSize(for size: CGSize) -> CGSize {
+        CGSize(width: max(size.width, 1), height: max(size.height, 1))
     }
 
     private func placeholder(icon: String?) -> some View {

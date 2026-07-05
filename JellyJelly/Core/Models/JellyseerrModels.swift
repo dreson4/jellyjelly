@@ -196,6 +196,138 @@ struct SeerSeasonDetails: Decodable {
     }
 }
 
+// MARK: - Request service settings (Radarr / Sonarr)
+
+struct SeerServiceProfile: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String?
+}
+
+struct SeerServiceRootFolder: Decodable, Hashable {
+    let id: Int?
+    let path: String?
+    let freeSpace: Int64?
+}
+
+struct SeerRequestService: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String?
+    let is4k: Bool?
+    let activeProfileId: Int?
+    let activeDirectory: String?
+    let activeLanguageProfileId: Int?
+    let tags: [Int]?
+    let qualityProfiles: [SeerServiceProfile]
+    let rootFolders: [SeerServiceRootFolder]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, is4k, activeProfileId, activeDirectory, activeLanguageProfileId
+        case tags, qualityProfiles, profiles, rootFolders
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        is4k = try container.decodeIfPresent(Bool.self, forKey: .is4k)
+        activeProfileId = try container.decodeIfPresent(Int.self, forKey: .activeProfileId)
+        activeDirectory = try container.decodeIfPresent(String.self, forKey: .activeDirectory)
+        activeLanguageProfileId = try container.decodeIfPresent(Int.self, forKey: .activeLanguageProfileId)
+        tags = try container.decodeIfPresent([Int].self, forKey: .tags)
+        qualityProfiles = try container.decodeIfPresent([SeerServiceProfile].self, forKey: .qualityProfiles)
+            ?? container.decodeIfPresent([SeerServiceProfile].self, forKey: .profiles)
+            ?? []
+        rootFolders = try container.decodeIfPresent([SeerServiceRootFolder].self, forKey: .rootFolders) ?? []
+    }
+
+    var displayName: String {
+        if let name, !name.isEmpty { return name }
+        return is4k == true ? "4K Server \(id)" : "Server \(id)"
+    }
+}
+
+/// The per-server detail endpoint (`service/radarr/{id}`, `service/sonarr/{id}`)
+/// that actually lists the available quality profiles and root folders — the
+/// list endpoint only carries the active ids.
+struct SeerServiceDetails: Decodable {
+    struct Server: Decodable {
+        let id: Int?
+        let name: String?
+        let is4k: Bool?
+        let activeProfileId: Int?
+        let activeDirectory: String?
+        let activeLanguageProfileId: Int?
+    }
+
+    let server: Server?
+    let profiles: [SeerServiceProfile]
+    let rootFolders: [SeerServiceRootFolder]
+
+    private enum CodingKeys: String, CodingKey { case server, profiles, rootFolders }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        server = try container.decodeIfPresent(Server.self, forKey: .server)
+        profiles = try container.decodeIfPresent([SeerServiceProfile].self, forKey: .profiles) ?? []
+        rootFolders = try container.decodeIfPresent([SeerServiceRootFolder].self, forKey: .rootFolders) ?? []
+    }
+}
+
+struct SeerRequestServiceList: Decodable {
+    let services: [SeerRequestService]
+
+    private enum CodingKeys: String, CodingKey { case results, services }
+
+    init(from decoder: Decoder) throws {
+        if let values = try? [FailableDecodable<SeerRequestService>](from: decoder) {
+            services = values.compactMap(\.value)
+            return
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let wrapped = try container.decodeIfPresent([FailableDecodable<SeerRequestService>].self, forKey: .results)
+            ?? container.decodeIfPresent([FailableDecodable<SeerRequestService>].self, forKey: .services)
+            ?? []
+        services = wrapped.compactMap(\.value)
+    }
+}
+
+struct SeerRequestOption: Identifiable, Hashable {
+    let serverId: Int?
+    let serverName: String
+    let profileId: Int?
+    let profileName: String
+    let rootFolder: String?
+    let languageProfileId: Int?
+    let tags: [Int]?
+    let is4K: Bool
+    let isDefault: Bool
+
+    var id: String {
+        [
+            serverId.map(String.init) ?? "default",
+            profileId.map(String.init) ?? "profile",
+            rootFolder ?? "folder",
+            languageProfileId.map(String.init) ?? "language",
+            is4K ? "4k" : "standard",
+        ].joined(separator: "|")
+    }
+
+    var title: String {
+        if is4K, !profileName.localizedCaseInsensitiveContains("4k") {
+            return "\(profileName) 4K"
+        }
+        return profileName
+    }
+
+    var subtitle: String {
+        [serverName, rootFolder].compactMap { part in
+            guard let part, !part.isEmpty else { return nil }
+            return part
+        }.joined(separator: "  ·  ")
+    }
+}
+
 struct SeerUser: Codable {
     let id: Int
     let displayName: String?

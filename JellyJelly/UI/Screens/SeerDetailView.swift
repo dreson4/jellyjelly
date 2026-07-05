@@ -9,6 +9,7 @@ struct SeerDetailView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var ambience: Ambience
     @Environment(\.detailPush) private var push
+    @StateObject private var prefetcher = SeerPrefetchCoordinator()
 
     let media: SeerResult
 
@@ -24,14 +25,16 @@ struct SeerDetailView: View {
     /// Episodes already fetched this session, keyed by season, so revisiting a
     /// season is instant and never re-hits the flaky endpoint.
     @State private var episodesBySeason: [Int: [SeerEpisode]] = [:]
+    @State private var prefetchingSeasons: Set<Int> = []
     /// Focusing a season chip loads it (hover-to-load), no click needed.
     @FocusState private var focusedSeason: Int?
 
     @State private var showRequestSheet = false
-    @State private var isRequesting = false
     @State private var requestDone = false
     @State private var canceling = false
     @State private var requestError: String?
+    @State private var requestOptions: [SeerRequestOption] = []
+    @State private var loadingRequestOptions = false
     /// Seasons we've requested this session, so their badges flip immediately.
     @State private var pendingSeasons: Set<Int> = []
     /// Give the request button initial focus instead of the back button.
@@ -59,8 +62,12 @@ struct SeerDetailView: View {
                 header
                 seasonsSection
                 castShelf
-                SeerShelf(title: "Recommendations", items: recommendations) { push(.seer($0)) }
-                SeerShelf(title: "Similar Titles", items: similar) { push(.seer($0)) }
+                SeerShelf(title: "Recommendations", items: recommendations,
+                          onSelect: { push(.seer($0)) },
+                          onPrefetch: prefetchRelated)
+                SeerShelf(title: "Similar Titles", items: similar,
+                          onSelect: { push(.seer($0)) },
+                          onPrefetch: prefetchRelated)
             }
             .padding(.bottom, 80)
         }
@@ -70,11 +77,19 @@ struct SeerDetailView: View {
         .task { await load() }
         .task(id: selectedSeason) { await loadEpisodesForSelection() }
         .sheet(isPresented: $showRequestSheet) {
-            SeerRequestSheet(media: media, seasons: regularSeasons, statusFor: seasonStatus) { seasons in
+            SeerRequestSheet(media: media,
+                             seasons: regularSeasons,
+                             requestOptions: requestOptions,
+                             loadingRequestOptions: loadingRequestOptions,
+                             statusFor: seasonStatus) { seasons, option in
                 guard let seer = appState.jellyseerr else { return "Not connected to Jellyseerr." }
                 do {
-                    try await seer.request(media, seasons: seasons)
-                    pendingSeasons.formUnion(seasons)
+                    try await seer.request(media, seasons: seasons, option: option)
+                    if media.isMovie {
+                        requestDone = true
+                    } else {
+                        pendingSeasons.formUnion(seasons)
+                    }
                     await refreshDetails()
                     return nil
                 } catch {
@@ -261,17 +276,12 @@ struct SeerDetailView: View {
                 switch status {
                 case .unknown:
                     Button {
-                        Task { await requestMovie() }
+                        showRequestSheet = true
                     } label: {
-                        if isRequesting {
-                            ProgressView().tint(.white)
-                        } else {
-                            Label("Request", systemImage: "plus.circle.fill")
-                        }
+                        Label("Request", systemImage: "plus.circle.fill")
                     }
                     .buttonStyle(PillButtonStyle(prominent: true))
                     .focused($requestFocused)
-                    .disabled(isRequesting)
                 default:
                     StatusBadge(status: status)
                     cancelButton
@@ -439,13 +449,20 @@ struct SeerDetailView: View {
         async let ratingsTask = seer.ratings(for: media)
         async let recsTask = seer.recommendations(for: media)
         async let similarTask = seer.similar(to: media)
+        async let requestOptionsTask = seer.requestOptions(for: media)
+        loadingRequestOptions = true
         details = try? await detailsTask
         ratings = try? await ratingsTask
         recommendations = (try? await recsTask) ?? []
         similar = (try? await similarTask) ?? []
+        requestOptions = (try? await requestOptionsTask) ?? []
+        loadingRequestOptions = false
 
         if media.isTV, selectedSeason == nil {
             selectedSeason = regularSeasons.first?.seasonNumber
+        }
+        if let selectedSeason {
+            prefetchEpisodes(around: selectedSeason)
         }
     }
 
@@ -457,6 +474,7 @@ struct SeerDetailView: View {
             episodes = cached
             loadingEpisodes = false
             episodeError = false
+            prefetchEpisodes(around: n)
             return
         }
 
@@ -472,6 +490,7 @@ struct SeerDetailView: View {
             if selectedSeason == n {
                 episodes = loaded
                 loadingEpisodes = false
+                prefetchEpisodes(around: n)
             }
         } catch {
             guard !Task.isCancelled, selectedSeason == n else { return }
@@ -481,30 +500,42 @@ struct SeerDetailView: View {
         }
     }
 
+    private func prefetchEpisodes(around season: Int) {
+        guard media.isTV, let seer = appState.jellyseerr else { return }
+        let numbers = regularSeasons.map(\.seasonNumber)
+        guard let index = numbers.firstIndex(of: season) else { return }
+
+        let nearby = [index - 1, index + 1, index + 2]
+            .filter { numbers.indices.contains($0) }
+            .map { numbers[$0] }
+            .filter { episodesBySeason[$0] == nil && !prefetchingSeasons.contains($0) }
+        guard !nearby.isEmpty else { return }
+
+        prefetchingSeasons.formUnion(nearby)
+        Task {
+            for number in nearby {
+                if let loaded = try? await seer.seasonDetails(tvId: media.id, season: number).episodes {
+                    episodesBySeason[number] = loaded
+                }
+                prefetchingSeasons.remove(number)
+            }
+        }
+    }
+
     private func retryEpisodes() {
         guard let n = selectedSeason else { return }
         episodesBySeason[n] = nil
         Task { await loadEpisodesForSelection() }
     }
 
-    private func requestMovie() async {
-        guard let seer = appState.jellyseerr else { return }
-        isRequesting = true
-        requestError = nil
-        do {
-            try await seer.request(media)
-            requestDone = true
-            await refreshDetails()   // pick up the new request id so Cancel appears
-        } catch {
-            requestError = "Request failed. \(error.localizedDescription)"
-        }
-        isRequesting = false
+    private func prefetchRelated(_ media: SeerResult) {
+        prefetcher.schedule(media, using: appState.jellyseerr)
     }
 
     /// Re-fetch details so status and cancelable request ids reflect the server.
     private func refreshDetails() async {
         guard let seer = appState.jellyseerr else { return }
-        details = try? await seer.details(for: media)
+        details = try? await seer.refreshDetails(for: media)
     }
 
     private func cancelRequests() async {
@@ -577,35 +608,51 @@ private struct SeerEpisodeCard: View {
 struct SeerRequestSheet: View {
     let media: SeerResult
     let seasons: [SeerSeason]
+    let requestOptions: [SeerRequestOption]
+    let loadingRequestOptions: Bool
     let statusFor: (Int) -> SeerMediaStatus
     /// Returns an error message, or nil on success.
-    let onSubmit: ([Int]) async -> String?
+    let onSubmit: ([Int], SeerRequestOption?) async -> String?
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var selected: Set<Int>
+    @State private var selectedOptionID: SeerRequestOption.ID?
     @State private var submitting = false
     @State private var error: String?
 
     init(media: SeerResult, seasons: [SeerSeason],
+         requestOptions: [SeerRequestOption],
+         loadingRequestOptions: Bool,
          statusFor: @escaping (Int) -> SeerMediaStatus,
-         onSubmit: @escaping ([Int]) async -> String?) {
+         onSubmit: @escaping ([Int], SeerRequestOption?) async -> String?) {
         self.media = media
         self.seasons = seasons
+        self.requestOptions = requestOptions
+        self.loadingRequestOptions = loadingRequestOptions
         self.statusFor = statusFor
         self.onSubmit = onSubmit
         _selected = State(initialValue: Set(
             seasons.filter { statusFor($0.seasonNumber) == .unknown }.map(\.seasonNumber)))
+        _selectedOptionID = State(initialValue: requestOptions.first?.id)
     }
 
     private var requestableCount: Int {
         seasons.filter { statusFor($0.seasonNumber) == .unknown }.count
     }
 
+    private var selectedOption: SeerRequestOption? {
+        requestOptions.first { $0.id == selectedOptionID } ?? requestOptions.first
+    }
+
+    private var canSubmit: Bool {
+        !submitting && !loadingRequestOptions && (media.isMovie || !selected.isEmpty)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Request Series")
+                Text(media.isMovie ? "Request Movie" : "Request Series")
                     .font(.largeTitle.weight(.heavy))
                     .foregroundStyle(Theme.textPrimary)
                 Text(media.displayTitle)
@@ -614,26 +661,30 @@ struct SeerRequestSheet: View {
             }
             .padding(.bottom, 8)
 
-            HStack {
-                Text("Season")
-                Spacer()
-                Text("Status")
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Theme.textTertiary)
-            .padding(.horizontal, 28)
-            .padding(.top, 20)
+            qualitySection
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 12) {
-                    allRow
-                    ForEach(seasons, id: \.seasonNumber) { season in
-                        seasonRow(season)
-                    }
+            if media.isTV {
+                HStack {
+                    Text("Season")
+                    Spacer()
+                    Text("Status")
                 }
-                .padding(.vertical, 12)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, 28)
+                .padding(.top, 26)
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        allRow
+                        ForEach(seasons, id: \.seasonNumber) { season in
+                            seasonRow(season)
+                        }
+                    }
+                    .padding(.vertical, 12)
+                }
+                .frame(maxHeight: 520)
             }
-            .frame(maxHeight: 620)
 
             if let error {
                 Text(error)
@@ -652,17 +703,108 @@ struct SeerRequestSheet: View {
                     if submitting {
                         ProgressView().tint(.white)
                     } else {
-                        Text(selected.count == 1 ? "Request 1 Season" : "Request \(selected.count) Seasons")
+                        Text(submitTitle)
                     }
                 }
                 .buttonStyle(PillButtonStyle(prominent: true))
-                .disabled(selected.isEmpty || submitting)
+                .disabled(!canSubmit)
             }
             .padding(.top, 24)
         }
         .padding(60)
         .frame(maxWidth: 1080)
         .background(Theme.background)
+        .onChange(of: requestOptions) { _, options in
+            if selectedOptionID == nil || !options.contains(where: { $0.id == selectedOptionID }) {
+                selectedOptionID = options.first?.id
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var qualitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Quality Profile")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.horizontal, 28)
+                .padding(.top, 22)
+
+            if loadingRequestOptions {
+                HStack(spacing: 12) {
+                    ProgressView().tint(.white)
+                    Text("Loading request settings...")
+                        .font(.callout)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 22)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.05)))
+            } else if requestOptions.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "gearshape")
+                        .font(.title3)
+                    Text("Default Jellyseerr settings")
+                        .font(.callout.weight(.semibold))
+                }
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 22)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.05)))
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(requestOptions) { option in
+                            qualityOption(option)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+                .scrollClipDisabled()
+                .focusSection()
+            }
+        }
+    }
+
+    private func qualityOption(_ option: SeerRequestOption) -> some View {
+        let isSelected = option.id == selectedOption?.id
+        return Button {
+            selectedOptionID = option.id
+        } label: {
+            HStack(spacing: 16) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(Theme.accentGradient) : AnyShapeStyle(Theme.textTertiary))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(option.title)
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .lineLimit(1)
+                        if option.isDefault {
+                            Badge(text: "Default", tint: Color.white.opacity(0.12), textColor: Theme.textSecondary)
+                        }
+                    }
+
+                    if !option.subtitle.isEmpty {
+                        Text(option.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(width: 420, height: 92, alignment: .leading)
+        }
+        .buttonStyle(SelectRowStyle())
+    }
+
+    private var submitTitle: String {
+        if media.isMovie { return "Request Movie" }
+        return selected.count == 1 ? "Request 1 Season" : "Request \(selected.count) Seasons"
     }
 
     private var allRow: some View {
@@ -735,7 +877,7 @@ struct SeerRequestSheet: View {
         submitting = true
         error = nil
         Task {
-            let result = await onSubmit(Array(selected).sorted())
+            let result = await onSubmit(Array(selected).sorted(), selectedOption)
             if let result {
                 error = result
                 submitting = false

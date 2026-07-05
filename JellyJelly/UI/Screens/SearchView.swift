@@ -49,7 +49,6 @@ struct SearchView: View {
                             PosterCardLabel(item: item)
                         }
                         .buttonStyle(.card)
-                        .ambientSource(appState.jellyfin?.ambientImageURL(for: item))
                         Text(item.name ?? "")
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)

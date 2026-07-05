@@ -7,6 +7,8 @@ enum ShelfStyle {
 
 /// Netflix-style horizontal shelf: section title + scrolling row of cards.
 struct Shelf: View {
+    @EnvironmentObject private var appState: AppState
+
     let title: String
     let items: [BaseItem]
     let style: ShelfStyle
@@ -22,12 +24,16 @@ struct Shelf: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: Theme.shelfSpacing) {
-                        ForEach(items) { item in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             switch style {
                             case .poster:
-                                PosterCard(item: item, action: { onSelect(item) })
+                                PosterCard(item: item,
+                                           action: { onSelect(item) },
+                                           onPrefetch: { prefetchAround(index) })
                             case .wide:
-                                WideCard(item: item, action: { onSelect(item) })
+                                WideCard(item: item,
+                                         action: { onSelect(item) },
+                                         onPrefetch: { prefetchAround(index) })
                             }
                         }
                     }
@@ -38,6 +44,27 @@ struct Shelf: View {
             }
             .focusSection()
         }
+    }
+
+    private func prefetchAround(_ focusedIndex: Int) {
+        guard let jellyfin = appState.jellyfin, items.indices.contains(focusedIndex) else { return }
+
+        let start = max(items.startIndex, focusedIndex - 1)
+        let end = min(items.endIndex, focusedIndex + 6)
+        var urls: [URL?] = []
+
+        for index in start..<end {
+            let item = items[index]
+            switch style {
+            case .poster:
+                urls.append(jellyfin.posterURL(for: item))
+            case .wide:
+                urls.append(jellyfin.wideImageURL(for: item))
+            }
+        }
+
+        urls.append(jellyfin.backdropURL(for: items[focusedIndex], maxWidth: 1280))
+        RemoteImagePrefetcher.shared.prefetch(urls)
     }
 }
 
@@ -135,6 +162,7 @@ struct SeerShelf: View {
     let title: String
     let items: [SeerResult]
     let onSelect: (SeerResult) -> Void
+    var onPrefetch: ((SeerResult) -> Void)?
 
     var body: some View {
         if !items.isEmpty {
@@ -146,8 +174,13 @@ struct SeerShelf: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: Theme.shelfSpacing) {
-                        ForEach(items) { media in
-                            SeerPosterCard(media: media, action: { onSelect(media) })
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, media in
+                            SeerPosterCard(media: media,
+                                           action: { onSelect(media) },
+                                           onPrefetch: {
+                                               prefetchAround(index)
+                                               onPrefetch?(media)
+                                           })
                         }
                     }
                     .padding(.horizontal, 64)
@@ -157,5 +190,16 @@ struct SeerShelf: View {
             }
             .focusSection()
         }
+    }
+
+    private func prefetchAround(_ focusedIndex: Int) {
+        guard items.indices.contains(focusedIndex) else { return }
+
+        let start = max(items.startIndex, focusedIndex - 1)
+        let end = min(items.endIndex, focusedIndex + 6)
+        var urls = (start..<end).map { items[$0].posterURL }
+        urls.append(items[focusedIndex].backdropURL)
+
+        RemoteImagePrefetcher.shared.prefetch(urls)
     }
 }

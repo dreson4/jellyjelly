@@ -8,6 +8,7 @@ struct SeerPersonView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var ambience: Ambience
     @Environment(\.detailPush) private var push
+    @StateObject private var prefetcher = SeerPrefetchCoordinator()
 
     let member: SeerCastMember
 
@@ -30,7 +31,9 @@ struct SeerPersonView: View {
                     }
                     .padding(.vertical, 80)
                 } else {
-                    SeerShelf(title: "Known For", items: credits) { push(.seer($0)) }
+                    SeerShelf(title: "Known For", items: credits,
+                              onSelect: { push(.seer($0)) },
+                              onPrefetch: prefetch)
                 }
             }
             .padding(.bottom, 80)
@@ -114,5 +117,9 @@ struct SeerPersonView: View {
             if out.count >= 30 { break }
         }
         return out
+    }
+
+    private func prefetch(_ media: SeerResult) {
+        prefetcher.schedule(media, using: appState.jellyseerr)
     }
 }

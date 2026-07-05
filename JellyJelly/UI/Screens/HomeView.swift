@@ -131,7 +131,6 @@ struct NavigationShelf: View {
                                 PosterCardLabel(item: item)
                             }
                             .buttonStyle(.card)
-                            .ambientSource(appState.jellyfin?.ambientImageURL(for: item))
                         }
                     }
                     .padding(.horizontal, 64)

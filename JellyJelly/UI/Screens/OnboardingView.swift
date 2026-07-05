@@ -33,8 +33,9 @@ struct OnboardingView: View {
     var body: some View {
         VStack(spacing: 48) {
             VStack(spacing: 12) {
+                BrandLogo(size: 130, cornerRadius: 34)
                 Text("JellyJelly")
-                    .font(.system(size: 76, weight: .heavy))
+                    .font(.system(size: 72, weight: .heavy))
                     .foregroundStyle(Theme.accentGradient)
                 Text("Your Jellyfin cinema, on the big screen")
                     .font(.title3)

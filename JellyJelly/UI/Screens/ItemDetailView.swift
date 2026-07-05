@@ -328,7 +328,6 @@ struct EpisodeCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.card)
-            .ambientSource(appState.jellyfin?.ambientImageURL(for: episode))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(episode.indexNumber.map { "\($0). " } ?? "")\(episode.name ?? "")")

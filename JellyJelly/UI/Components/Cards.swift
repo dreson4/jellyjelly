@@ -6,6 +6,9 @@ struct PosterCard: View {
     let item: BaseItem
     let action: () -> Void
     var showTitle = true
+    var onPrefetch: (() -> Void)?
+
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -24,7 +27,10 @@ struct PosterCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.card)
-            .ambientSource(appState.jellyfin?.ambientImageURL(for: item))
+            .focused($isFocused)
+            .onChange(of: isFocused) { _, focused in
+                if focused { onPrefetch?() }
+            }
 
             if showTitle {
                 Text(item.name ?? "")
@@ -42,6 +48,9 @@ struct WideCard: View {
     @EnvironmentObject private var appState: AppState
     let item: BaseItem
     let action: () -> Void
+    var onPrefetch: (() -> Void)?
+
+    @FocusState private var isFocused: Bool
 
     private var title: String {
         item.isEpisode ? (item.seriesName ?? item.name ?? "") : (item.name ?? "")
@@ -70,7 +79,10 @@ struct WideCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.card)
-            .ambientSource(appState.jellyfin?.ambientImageURL(for: item))
+            .focused($isFocused)
+            .onChange(of: isFocused) { _, focused in
+                if focused { onPrefetch?() }
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -91,6 +103,9 @@ struct WideCard: View {
 struct SeerPosterCard: View {
     let media: SeerResult
     let action: () -> Void
+    var onPrefetch: (() -> Void)?
+
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -107,7 +122,10 @@ struct SeerPosterCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.card)
-            .ambientSource(media.ambientURL)
+            .focused($isFocused)
+            .onChange(of: isFocused) { _, focused in
+                if focused { onPrefetch?() }
+            }
 
             Text(media.displayTitle)
                 .font(.caption)
